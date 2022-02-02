@@ -2,6 +2,7 @@
 
 import argparse
 import os
+import string
 import regex
 
 
@@ -164,31 +165,13 @@ def month_value(month_name: str) -> str:
 	:param month_name: string representation of the month
 	:return: a string (note!) with the number of the month, left padded with zeros
 	"""
-	if month_name.lower() == 'january':
-		return "01"
-	if month_name.lower() == 'february':
-		return "02"
-	if month_name.lower() == 'march':
-		return "03"
-	if month_name.lower() == 'april':
-		return "04"
-	if month_name.lower() == 'may':
-		return "05"
-	if month_name.lower() == 'june':
-		return "06"
-	if month_name.lower() == 'july':
-		return "07"
-	if month_name.lower() == 'august':
-		return "08"
-	if month_name.lower() == 'september':
-		return "09"
-	if month_name.lower() == 'october':
-		return "10"
-	if month_name.lower() == 'november':
-		return "11"
-	if month_name.lower() == 'december':
-		return "12"
-	return "00"
+	months = ['', 'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december']
+	lc_month = month_name.lower().strip()
+	if lc_month in months:
+		month_num = months.index(lc_month)
+		return str(month_num).zfill(2)
+	else:
+		return "00"
 
 
 def process_content_opf(fname: str, bd: BookData):
@@ -308,7 +291,7 @@ def get_translation(bookdata, textlines):
 		match = regex.search(r'>(.*?)<', thisline)
 		if match is not None:
 			bookdata.translator = match.group(1)
-		bookdata.translator = remove_class_name(bookdata.translator)
+		bookdata.translator = remove_tags(bookdata.translator)
 
 
 def get_se_link(bookdata, textlines):
@@ -336,7 +319,7 @@ def get_transcriber(bookdata, textlines):
 				bookdata.transcriber += ", The Online Distributed Proofreading Team"
 			else:
 				bookdata.transcriber += "The Online Distributed Proofreading Team"
-		bookdata.transcriber = remove_abbr(bookdata.transcriber)
+		bookdata.transcriber = remove_tags(bookdata.transcriber)
 
 
 def get_cover_and_artist(bookdata, textlines):
@@ -350,7 +333,7 @@ def get_cover_and_artist(bookdata, textlines):
 			match = regex.search(r'>, (.*?)[\.,]', thisline)
 			if match is not None:
 				bookdata.producer = match.group(1)
-		bookdata.cover = remove_abbr(bookdata.cover)
+		bookdata.cover = remove_tags(bookdata.cover)
 		thisline = textlines.get_next_line()
 		match = regex.search(r'completed (in|around|about) (\d{4})', thisline)
 		if match is not None:
@@ -364,11 +347,11 @@ def get_cover_and_artist(bookdata, textlines):
 			match = regex.search(r'^\t{0,4}(.*?)\.<br/>', thisline)
 			if match is not None:
 				bookdata.cover_artist = match.group(1)
-		bookdata.cover_artist = remove_abbr(bookdata.cover_artist)
+		bookdata.cover_artist = remove_tags(bookdata.cover_artist)
 
 
 def get_producer(bookdata, textlines):
-	thisline = textlines.get_line_containing("Standard Ebooks project")
+	thisline = textlines.get_line_containing(">Standard Ebooks<")
 	if thisline != "":
 		textlines.get_next_line()  # should be "by"
 		thisline = textlines.get_next_line()
@@ -380,7 +363,7 @@ def get_producer(bookdata, textlines):
 			match = regex.search(r'^\t{0,4}(.*?)[\.,]', thisline)
 			if match is not None:
 				bookdata.producer = match.group(1)
-		bookdata.producer = remove_class_name(bookdata.producer)
+		bookdata.producer = remove_tags(bookdata.producer)
 
 
 def get_title_and_author(bookdata, textlines):
@@ -389,15 +372,14 @@ def get_title_and_author(bookdata, textlines):
 		match = regex.search(r'<i(.*?)">(.*?)</i>', thisline)
 		if match is not None:
 			bookdata.title = match.group(2)
-		bookdata.title = remove_abbr(bookdata.title)
+		bookdata.title = remove_tags(bookdata.title)
 		thisline = textlines.get_next_line()
 		match = regex.search(r'(published|written|compiled) (in|between|around) (.*?) by', thisline)
 		if match is not None:
 			bookdata.pub_year = match.group(3)
-		# remove era
-		if '<abbr class="era">' in bookdata.pub_year:
-			bookdata.pub_year = regex.sub(r'<abbr class="era">BC</abbr>', 'BC', bookdata.pub_year)
-			bookdata.pub_year = regex.sub(r'<abbr class="era">AD</abbr>', 'AD', bookdata.pub_year)
+			bookdata.pub_year = remove_tags(bookdata.pub_year)
+		else:
+			bookdata.pub_year = "Unknown"
 		thisline = textlines.get_next_line()
 		# author line may or may not be hyperlinked
 		match = regex.search(r'>(.*?)</a>', thisline)
@@ -407,8 +389,8 @@ def get_title_and_author(bookdata, textlines):
 			match = regex.search(r'^\t{0,4}(.*?)\.', thisline)
 			if match is not None:
 				bookdata.author = match.group(1)
-		# may need to clean up abbreviations in name
-		bookdata.author = remove_abbr(bookdata.author)
+		# remove any html tags
+		bookdata.author = remove_tags(bookdata.author)
 
 
 def sortable_name(string_value: str) -> str:
@@ -430,23 +412,8 @@ def sortable_title(string_value: str) -> str:
 	return string_value
 
 
-def remove_class_name(string_value: str) -> str:
-	if '<abbr' in string_value:
-		string_value = regex.sub(r'<abbr class="name">', '', string_value)
-		string_value = regex.sub(r'</abbr>', '', string_value)
-	if '<b class="name">' in string_value:
-		string_value = regex.sub(r'<b class="name">', '', string_value)
-		string_value = regex.sub(r'</b>', '', string_value)
-	return string_value
-
-
-def remove_abbr(string_value: str) -> str:
-	if '<' in string_value:
-		string_value = regex.sub(r'<abbr.*?>', '', string_value)
-		string_value = regex.sub(r'</abbr>', '', string_value)
-		string_value = regex.sub(r'<i.*?>', '', string_value)
-		string_value = regex.sub(r'</i>', '', string_value)
-		string_value = regex.sub(' ', ' ', string_value)
+def remove_tags(string_value: str) -> str:
+	string_value = regex.sub(r'<.*?>', '', string_value)
 	return string_value
 
 
